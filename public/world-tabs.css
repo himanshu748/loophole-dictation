@@ -1,0 +1,1 @@
+.world-tabs{display:flex;gap:26px;padding-top:20px;flex-wrap:wrap}.world-tabs a{color:var(--muted);padding:10px 0;text-decoration:none;border-bottom:2px solid transparent;min-height:44px;font-size:13px}.world-tabs a[aria-current=page]{color:var(--ink);border-color:var(--action)}@media(max-width:760px){.world-tabs{gap:12px;padding-top:12px}.world-tabs a{font-size:12px}}

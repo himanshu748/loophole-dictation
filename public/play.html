@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f2eb">
+  <meta name="description" content="Dictate a rule. Watch a tiny world find its loophole. An interactive laboratory for the gap between what you say and what you mean.">
+  <title>Playground — Loophole</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/rubric.css"><link rel="stylesheet" href="/world-tabs.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#rule">Skip to rule editor</a>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Loophole home"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M23 5H11a6 6 0 0 0-6 6v14a6 6 0 0 0 6 6h14a6 6 0 0 0 6-6V13M16 13h7v10h-10v-7"/></svg>loophole<span class="brand-dot">.</span></a>
+    <nav aria-label="Main"><a class="active" href="#lab">Playground</a><a href="#how">How it works</a></nav>
+    <button id="share" class="button quiet">Share rule</button><button id="export" aria-label="Export experiment" class="button quiet" disabled><span data-icon="download"></span><span>Export experiment</span></button>
+  </header>
+  <main id="lab"><div class="world-tabs" aria-label="Rule worlds"><a href="/create">Create your own world</a><a href="/play?challenge=tailgate" aria-current="page">Robot checkpoint</a><a href="/lab?world=coupons">Coupon redemption</a><a href="/lab?world=approvals&amp;test=edited">Document approval</a></div>
+    <section class="intro" aria-labelledby="page-title">
+      <div><h1 id="page-title">Make a rule. <em>Test its limits.</em></h1><p>Write, speak, or build a rule. Then try to break it.</p></div>
+      <div class="intro-note"><span class="status-dot"></span>A small world for big “what ifs.”<span>Built with AssemblyAI</span></div>
+    </section>
+    <div class="workbench">
+      <section class="rule-sheet" aria-labelledby="rule-title">
+        <div class="sheet-heading"><h2 id="rule-title">Your rule</h2><span id="version" class="version">STARTER RULE</span></div>
+        <label class="sr-only" for="rule">Describe the checkpoint rule</label>
+        <textarea id="rule" maxlength="2000" spellcheck="false">Open the gate when a robot with a blue badge arrives.</textarea>
+        <div class="dictation-tools"><button id="mic" class="mic-button" aria-label="Start recording a rule"><span data-icon="mic"></span><span id="mic-label">Dictate a rule</span></button><div id="voice-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span id="record-time"></span></div>
+        <p id="voice-status" class="microcopy">Your microphone is off. Type or speak to begin.</p>
+        <details class="sample-audio"><summary>Try with a sample recording</summary><audio controls preload="none" src="/sample.wav" aria-label="Computer-generated rule correction recording"></audio><p>Computer-generated speech, sent to the real Dictation API when you transcribe.</p><button id="sample" class="button quiet">Transcribe sample<span data-icon="arrow"></span></button></details>
+        <details id="speech-proof" hidden><summary>What AssemblyAI heard</summary><div id="speech-text"></div></details>
+        <div id="message" role="status" aria-live="polite" hidden></div>
+        <div class="interpretation"><div class="section-title"><h3 id="interpret-title">What this means</h3><span data-icon="brackets"></span></div><dl id="meaning"></dl><div id="assumptions"></div></div>
+        <button id="primary" class="button primary"><span data-icon="search"></span><span id="primary-label">Find a loophole</span><span class="button-arrow" data-icon="arrow"></span></button>
+        <button id="discard" class="button quiet full" hidden>Discard interpretation</button>
+        <details id="builder" class="rule-builder"><summary>Build a rule with controls</summary><p>Every combination works without AI or an API key.</p>
+<label for="build-trigger">Which badge opens the gate?</label><select id="build-trigger"><option value="blue">Blue badge</option><option value="red">Red badge</option><option value="any">Any badge</option></select>
+<label for="build-passage">Who can use the opening?</label><select id="build-passage"><option value="shared">Anyone; gate stays open</option><option value="single">One robot; whoever arrives</option><option value="bound">Only the robot that scanned</option></select>
+<label for="build-recheck">When is the badge checked?</label><select id="build-recheck"><option value="0">At scanning only</option><option value="1">At scanning and crossing</option></select><button id="use-builder" class="button dark">Review this rule</button></details>
+<div class="examples"><h3>Try a different rule</h3><div id="example-list"></div></div>
+        <p class="rule-help">You can describe badges, who crosses, and when checks happen. Timers, escorts, and other worlds are outside this model.</p><div class="revision-block" hidden><h3>Rule history</h3><div id="history"></div></div>
+      </section>
+      <section class="world-panel" aria-labelledby="world-title">
+        <div class="world-heading"><div><span class="world-symbol" data-icon="world"></span><h2 id="world-title">The checkpoint</h2></div><span class="world-count">2 robots <span>·</span> 1 gate</span></div>
+        <section id="rubric-editor" class="rubric-editor" aria-label="Your rubric"></section>
+        <div class="scene-wrap">
+          <div class="scene-caption"><span id="scene-state">Ready to experiment</span><span id="gate-status">GATE CLOSED</span></div>
+          <div class="mobile-scene-zones"><span>Outside · waiting area</span><span>Inside · restricted area</span></div><svg id="scene" viewBox="0 0 800 370" role="img" aria-label="Checkpoint: Atlas has a blue badge and Pip has a red badge. Both robots are outside the closed gate.">
+            <defs>
+              <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#d9dbd0"/></pattern>
+              <pattern id="hazard" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="16" fill="#d6d1bf"/></pattern>
+            </defs>
+            <rect width="800" height="370" fill="url(#dots)"/>
+            <rect x="38" y="72" width="410" height="214" rx="20" class="outside-floor"/>
+            <rect x="458" y="72" width="303" height="214" rx="20" class="inside-floor"/>
+            <text x="63" y="104" class="map-label">WAITING AREA</text><text x="610" y="104" class="map-label">RESTRICTED</text>
+            <path d="M97 185H682" class="route-line"/>
+            <path d="m265 180 6 5-6 5m310-10 6 5-6 5" class="route-arrow"/>
+            <rect x="429" y="72" width="36" height="63" rx="5" class="wall"/><rect x="429" y="235" width="36" height="51" rx="5" class="wall"/>
+            <rect x="434" y="137" width="25" height="96" fill="url(#hazard)" opacity=".6"/>
+            <g id="gate"><rect x="437" y="127" width="20" height="115" rx="6" class="gate-bar"/><path d="M445 144v80" class="gate-stripe"/></g>
+            <rect x="390" y="239" width="31" height="29" rx="6" class="scanner"/><rect id="scanner-light" x="399" y="247" width="13" height="5" rx="2"/>
+            <path d="M406 270v42" class="leader"/><text x="374" y="334" class="map-label small">BADGE READER</text>
+            <g id="atlas" class="robot" transform="translate(323 183)">
+              <ellipse cy="31" rx="35" ry="9" fill="#d9d8cb"/>
+              <rect x="-28" y="-22" width="56" height="50" rx="17" fill="#cddbef" stroke="#426bb6" stroke-width="2"/>
+              <rect x="-22" y="-17" width="44" height="23" rx="9" fill="#426bb6"/>
+              <circle cx="-8" cy="-6" r="3" fill="white"/><circle cx="8" cy="-6" r="3" fill="white"/>
+              <path d="M-29 7h-5v10m63-10h5v10" stroke="#426bb6" stroke-width="4" fill="none" stroke-linecap="round"/>
+              <rect x="-7" y="11" width="14" height="11" rx="3" fill="#426bb6"/>
+              <text y="64" class="robot-name">Atlas</text><text y="81" class="robot-id">BLUE BADGE</text>
+              <g id="revoked-mark" visibility="hidden"><circle cy="-39" r="12" fill="#b84a3c"/><path d="m-4-43 8 8m0-8-8 8" stroke="white" stroke-width="2"/></g>
+            </g>
+            <g id="pip" class="robot" transform="translate(157 183)">
+              <ellipse cy="31" rx="35" ry="9" fill="#d9d8cb"/>
+              <rect x="-26" y="-22" width="52" height="50" rx="12" fill="#efc9bf" stroke="#b84a3c" stroke-width="2"/>
+              <rect x="-20" y="-17" width="40" height="23" rx="7" fill="#b84a3c"/>
+              <circle cx="-7" cy="-6" r="3" fill="white"/><circle cx="7" cy="-6" r="3" fill="white"/>
+              <path d="M-27 7h-5v10m59-10h5v10" stroke="#b84a3c" stroke-width="4" fill="none" stroke-linecap="round"/>
+              <rect x="-6" y="11" width="12" height="11" rx="3" fill="#b84a3c"/>
+              <text y="64" class="robot-name">Pip</text><text y="81" class="robot-id">RED BADGE</text>
+            </g>
+            <g id="blocked-mark" visibility="hidden"><circle cx="398" cy="165" r="15" fill="#f4f2eb" stroke="#356845" stroke-width="2"/><path d="m393 160 10 10m0-10-10 10" stroke="#356845" stroke-width="2"/></g>
+          </svg>
+          <div class="scene-bottom"><span><i class="legend blue"></i>Atlas · blue badge</span><span><i class="legend red"></i>Pip · red badge</span><span class="toy-label">A simulated world</span></div>
+        </div>
+        <div class="experiment-toolbar"><label for="scenario">Experiment</label><select id="scenario"><option value="tailgate">Tailgating</option><option value="theft">Borrowed opening</option><option value="revoked">Revoked badge</option></select><button id="reset" class="button quiet icon-only" aria-label="Reset replay to the beginning"><span data-icon="reset"></span></button></div>
+        <details class="manual-controls"><summary>Play by hand</summary><p>Try your own sequence under the applied rule. Blocked moves explain why.</p><div class="manual-grid"><div><strong>Atlas · blue</strong><button data-move="scan:B-01">Scan badge</button><button data-move="enter:B-01">Try crossing</button><button data-move="revoke:B-01" id="manual-revoke" hidden>Revoke badge</button></div><div><strong>Pip · red</strong><button data-move="scan:R-02">Scan badge</button><button data-move="enter:R-02">Try crossing</button></div></div><button id="manual-reset" class="button quiet">Start my moves over</button></details>
+<section id="result" class="result" aria-live="polite"><div class="empty-result"><span data-icon="spark"></span><div><h3>Looks reasonable. But is it?</h3><p>Search the possible moves. See if either robot can break your goal without breaking your rule.</p></div></div></section>
+        <section id="timeline" class="timeline" hidden aria-label="Counterexample replay">
+          <div class="timeline-heading"><h3 id="trace-title">The counterexample</h3><span id="step-count"></span></div>
+          <div id="trace-steps" class="trace-steps"></div>
+          <div class="playback"><button id="play" class="button dark"><span data-icon="play"></span><span id="play-label">Replay</span></button><button id="prev" class="button quiet icon-only" aria-label="Previous step"><span data-icon="back"></span></button><input id="scrub" type="range" min="0" max="3" value="0" aria-label="Replay step"><button id="next" class="button quiet icon-only" aria-label="Next step"><span data-icon="forward"></span></button><button id="replay-original" class="button quiet" hidden>Test original moves</button></div>
+          <p id="event-description">Both robots are waiting outside.</p>
+        </section>
+        <section class="all-experiments" aria-label="All experiment results"><h3>Test this rule in every experiment</h3><div id="all-results"></div></section><div id="search-bounds" class="search-bounds"><span data-icon="info"></span><span>Search checks this two-robot model. It does not certify a real checkpoint.</span></div>
+      </section>
+    </div>
+    <section id="how" class="how-section"><div><h2>The gap between<br>said and <em>meant.</em></h2><p>A rule can do exactly what you asked—and still surprise you. Loophole makes that gap visible.</p></div><ol><li><strong>Give the world a rule.</strong><p>Speak naturally or start with an example. Review how your words become gate behavior.</p></li><li><strong>Look for the exception.</strong><p>The search explores possible moves and returns a concrete sequence that breaks your goal.</p></li><li><strong>Change a few words.</strong><p>Apply a revision. Test the original moves again and watch the outcome change.</p></li></ol></section>
+    <details class="model-details"><summary>What this world can—and cannot—model</summary><p>Two robots, blue/red badges, one gate. Rules control the badge that opens it, who can use the opening, and whether a badge is checked again at crossing. Experiments optionally allow overtaking or badge revocation before entry. No timing, escorts, real hardware, physical collisions, or arbitrary exceptions. Search exhausts reachable model states when it finds no violation; it stops at the first shortest counterexample otherwise. Create a rubric to choose permitted badge colors, revocation requirements and the maximum number of robots inside. All selected criteria must hold.</p><p>Audio is sent to AssemblyAI when you finish recording or transcribe the sample. Original and cleaned transcripts are available for review. Custom rule text is sent to AssemblyAI’s LLM Gateway for interpretation. Rules and experiment history stay in this browser; exported evidence includes rule text and transcripts, not audio. The server does not save recordings. Built-in examples use predefined interpretations, visibly identified as examples.</p></details>
+  </main>
+  <footer><span class="footer-brand">loophole.</span><span>Every exception starts with a rule.</span><a href="https://luma.com/qwckwa01" target="_blank" rel="noopener noreferrer">AssemblyAI Voice Hackathon<span data-icon="external"></span></a></footer>
+</body></html>

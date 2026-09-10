@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+work/
+# Local reports, submission bundles, recordings, and publication drafts.
+/outputs/
+/local/
+/recordings/
+/drafts/
+.DS_Store
+.impeccable/review/
+
+.wrangler/
+.dev.vars*

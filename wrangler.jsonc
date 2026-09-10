@@ -1,0 +1,10 @@
+{
+  "name": "loophole-voice-lab",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-09",
+  "assets": {"directory": "./public", "binding": "ASSETS", "run_worker_first": true},
+  "vars": {"DAILY_API_LIMIT": "200", "ASSEMBLYAI_LLM_MODEL": "qwen3.5-4b-32k-fast"},
+  "durable_objects": {"bindings": [{"name":"VOICE_BUDGET","class_name":"VoiceBudget"}]},
+  "migrations": [{"tag":"v1","new_sqlite_classes":["VoiceBudget"]}],
+  "observability": {"enabled": false}
+}
