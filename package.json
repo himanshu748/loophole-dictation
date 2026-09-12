@@ -8,7 +8,7 @@
     "start": "node --env-file-if-exists=.env server.mjs",
     "dev": "node --env-file-if-exists=.env --watch server.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check server.mjs && node --check worker.mjs && node --check services.mjs && node --check public/app.js && node --check public/engine.js && node --check public/compiler.js && node --check public/rules.js && node --check public/landing.js && node --check public/voice.js && node --check public/domains.js && node --check public/lab.js && node --check public/rubric.js && node --check public/rubric-editor.js && node --check public/create.js && node --check public/world-model.js && node --check world-services.mjs"
+    "check": "node --check server.mjs && node --check worker.mjs && node --check services.mjs && node --check public/app.js && node --check public/engine.js && node --check public/compiler.js && node --check public/rules.js && node --check public/landing.js && node --check public/voice.js && node --check public/domains.js && node --check public/lab.js && node --check public/rubric.js && node --check public/rubric-editor.js && node --check public/create.js && node --check public/world-model.js && node --check world-services.mjs && node --check public/world-share.js && node --check public/world-workspace.js && node --check public/world-comparison.js"
   },
   "engines": {
     "node": ">=22"
