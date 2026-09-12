@@ -1,4 +1,4 @@
-import {interpretWorld,transcribeWorld,analyzeWorld,validateReviewOnly} from './world-services.mjs';
+import {interpretWorld,transcribeWorld,analyzeWorld,validateReviewOnly,validateWorldRevision,reviseWorld} from './world-services.mjs';
 import {validateBrief} from './public/world-model.js';
 import http from 'node:http';
 import {readFile,stat} from 'node:fs/promises';
@@ -15,7 +15,18 @@ const limits=new Map(); let active=0, total=0, day=new Date().toISOString().slic
 
 
 function json(res,status,data) {res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
-async function body(req,max) {let size=0,chunks=[];for await(const chunk of req){size+=chunk.length;if(size>max)throw Object.assign(new Error('Recording is too large. Keep it under 60 seconds.'),{status:413});chunks.push(chunk);}return Buffer.concat(chunks);}
+async function body(req,max,keepConnection=false) {
+  let size=0,chunks=[];
+  // Revision JSON may cross the limit mid-stream. Keep its socket alive long
+  // enough to return 413 rather than letting iterator cleanup reset it.
+  const input=keepConnection?req.iterator({destroyOnReturn:false}):req;
+  for await(const chunk of input){
+    size+=chunk.length;
+    if(size>max){if(keepConnection)req.resume();throw Object.assign(new Error('Recording is too large. Keep it under 60 seconds.'),{status:413});}
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
 function consume(req) {
   const now=Date.now(), ip=req.socket.remoteAddress;
   if(new Date().toISOString().slice(0,10)!==day){day=new Date().toISOString().slice(0,10);total=0;}
@@ -40,7 +51,15 @@ export const server=http.createServer(async(req,res)=>{
       if(origin && new URL(origin).host!==req.headers.host) return json(res,403,{error:'This request must come from the Loophole page.'});
       // A custom header prevents cross-site form submissions from spending API quota.
       if(req.headers['x-loophole-client']!=='web') return json(res,403,{error:'Missing application request header.'});
-      if(!['/api/compile','/api/transcribe','/api/world/interpret','/api/world/transcribe','/api/world/analyze'].includes(url.pathname)) return json(res,404,{error:'Unknown action.'});
+      if(!['/api/compile','/api/transcribe','/api/world/interpret','/api/world/transcribe','/api/world/analyze','/api/world/revise'].includes(url.pathname)) return json(res,404,{error:'Unknown action.'});
+      if(url.pathname==='/api/world/revise') {
+        if(req.headers['content-type']?.split(';')[0].trim().toLowerCase()!=='application/json')return json(res,415,{error:'Expected JSON containing the recording and reviewed world.'});
+        const data=JSON.parse((await body(req,2600000,true)).toString());
+        let payload;try{payload=validateWorldRevision(data);}catch(error){return json(res,400,{error:error.message});}
+        if(!key)return json(res,503,{error:'Voice is not configured. Add ASSEMBLYAI_API_KEY on the server, or type a rule.'});
+        consume(req);active++;counted=true;
+        return json(res,200,await reviseWorld(payload.pcm,payload.brief,process.env,payload.edit));
+      }
       if(['/api/world/interpret','/api/world/analyze'].includes(url.pathname)) {
         const data=JSON.parse((await body(req,24000)).toString());
         if(url.pathname.endsWith('/interpret')) {if(!data||typeof data.text!=='string'||!data.text.trim()||data.text.length>6000)return json(res,400,{error:'Describe your world in 1–6,000 characters.'});}

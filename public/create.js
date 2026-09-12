@@ -8,17 +8,22 @@ const exampleAirlock='My world is a space station airlock. An astronaut can open
 const exampleFestival='My world is a neighborhood art festival. Artists propose installations for the public square. Organizers choose whatever they consider interesting. My rubric is that the festival should feel welcoming to first-time visitors and represent different local perspectives.';
 let busy=false,capture=null,starting=false,speech=null,briefSpeech=null,briefEdited=false,briefSource=null,lastCounterexample=[],proposal=null,applied=null,previous=null,result=null,trace=[],step=0,manual=false;
 let workspace=emptyWorkspace(),workspaceReady=false,rememberDraft=false,removedWorld=null,comparison=null,comparisonPrevious=null,suspendDraftPersistence=false;
+let recordingBase=null,recordingEdit=null,revisionForApplied=null;
 const fields=['world','actors','resources','rules','rubric'];
 const locked=()=>busy||starting||!!capture;
 function message(text){$('message').textContent=text;$('message').hidden=!text;}
 function controls(){
-  document.querySelectorAll('.creator-bench button,.creator-bench textarea,.creator-bench input,.workspace-panel button,.workspace-panel input,#share,#export').forEach(el=>el.disabled=locked());
+  document.querySelectorAll('.creator-bench button,.creator-bench textarea,.creator-bench input,.creator-bench select,.workspace-panel button,.workspace-panel input,#share,#export').forEach(el=>el.disabled=locked());
   $('record').disabled=busy||starting;
   $('extract').disabled=locked()||!$('description').value.trim();
   $('share').disabled=locked()||!applied;$('export').disabled=locked()||!applied;
   $('save-world').disabled=locked()||!applied||!workspaceReady;
   $('remember-draft').disabled=locked()||!workspaceReady;
   document.querySelectorAll('[data-compare-world]').forEach(el=>el.disabled=locked()||!applied);
+  const needsRevision=!!applied&&revisionForApplied!==applied;
+  $('analyze').disabled=locked()||needsRevision;$('review-only').disabled=locked()||needsRevision;
+  $('revision-required').hidden=!needsRevision;
+  $('revision-sample-wrap').hidden=!applied?.brief.resources.some(r=>/drill/i.test(r));
   renderProgress();
   $('apply').disabled=locked()||!proposal;
   $('next').disabled=locked()||step>=trace.length;$('start').disabled=locked()||step===0;
@@ -30,51 +35,92 @@ async function api(route,body,type='application/json'){
 }
 function analysisMessage(text){$('analysis-message').textContent=text;$('analysis-message').hidden=!text;}
 function receiptText(r){return `${r.provider} · ${(r.elapsedMs/1000).toFixed(1)}s${r.model?' · '+r.model:''}${r.jsonSyntaxRepaired?' · JSON syntax repaired; review the model carefully':''}`;}
-function draftChanged(){analysisMessage('');briefEdited=true;proposal=null;$('proposal-panel').hidden=true;if(applied)$('applied-note').textContent='Your draft changes have not changed this applied world.';persistDraft();controls();}
+function draftChanged(){renderRevisionReference();analysisMessage('');briefEdited=true;proposal=null;$('proposal-panel').hidden=true;if(applied)$('applied-note').textContent='Your draft changes have not changed this applied world.';persistDraft();controls();}
 function showBrief(input,source,sourceSpeech=null){
+  revisionForApplied=null;
   const brief=validateBrief(input);briefSource=source;briefSpeech=sourceSpeech?structuredClone(sourceSpeech):null;
   $('brief-world').value=brief.world;
   for(const k of ['actors','resources','rules','rubric'])$('brief-'+k).value=brief[k].join('\n');
   $('empty-world').hidden=true;$('brief-panel').hidden=false;$('brief-source').textContent=source;
   draftChanged();briefEdited=false;persistDraft();focusPanel('brief-title');
 }
+function renderRevisionTargets(){
+  const field=['rules','rubric','world'].includes($('revision-field').value)?$('revision-field').value:'rules';$('revision-field').value=field;
+  if(!['replace','append'].includes($('revision-operation').value)||field==='world')$('revision-operation').value='replace';
+  const replace=$('revision-operation').value==='replace',old=Number($('revision-item').value)||1;
+  const items=field==='world'?[]:$('brief-'+field).value.split('\n').map(x=>x.trim()).filter(Boolean);
+  $('revision-operation-wrap').hidden=field==='world';$('revision-item-wrap').hidden=field==='world'||!replace;
+  $('revision-item').innerHTML=items.map((_,i)=>`<option value="${i+1}">${field==='rules'?'Rule':'Requirement'} ${i+1}</option>`).join('');
+  $('revision-item').value=String(Math.min(old,items.length)||1);
+}
+function readRevisionTarget(){
+  const field=$('revision-field').value,operation=field==='world'?'replace':$('revision-operation').value;
+  return {field,operation,...(field!=='world'&&operation==='replace'?{item_number:Number($('revision-item').value)}:{})};
+}
+for(const id of ['revision-field','revision-operation'])$(id).addEventListener('change',renderRevisionTargets);
+function renderRevisionReference(){
+  renderRevisionTargets();
+  $('revision-reference').innerHTML=['rules','rubric'].map(k=>`<h3>${k==='rules'?'Draft rules':'Draft rubric'}</h3><ol>${$('brief-'+k).value.split('\n').map(x=>x.trim()).filter(Boolean).map(x=>`<li>${escape(x)}</li>`).join('')}</ol>`).join('');
+}
 function readBrief(){return validateBrief({world:$('brief-world').value,...Object.fromEntries(['actors','resources','rules','rubric'].map(k=>[k,$('brief-'+k).value.split('\n').map(x=>x.trim()).filter(Boolean)]))},{complete:true});}
-function showSpeech(data,label){
+function resetAppliedWorld(){
+  applied=null;previous=null;comparisonPrevious=null;comparison=null;revisionForApplied=null;result=null;trace=[];step=0;lastCounterexample=[];
+  $('applied-panel').hidden=true;$('comparison-panel').hidden=true;
+}
+function showSpeech(data,label,revisionBase=null){
   speech={...data,input:label};$('description').value=data.text;
-  $('speech-receipt').hidden=false;$('speech-summary').textContent=`${data.brief?'Transcript + structured world returned':'Transcript returned'} · ${(data.receipt.elapsedMs/1000).toFixed(1)}s · ${label}${data.receipt.jsonSyntaxRepaired?' · JSON syntax repaired':''}`;
+  const transcriptFallback=!!revisionBase&&data.candidateSource==='original-transcript';
+  $('speech-receipt').hidden=false;$('speech-summary').textContent=`${data.brief?(revisionBase?(transcriptFallback?'Original transcript used for revision':'Transcript + revised wording returned'):'Transcript + structured world returned'):'Transcript returned'} · ${(data.receipt.elapsedMs/1000).toFixed(1)}s · ${label}${data.receipt.jsonSyntaxRepaired?' · JSON syntax repaired':''}`;
   $('speech-original').textContent=data.text;
   $('speech-metadata').innerHTML=[['Endpoint',data.receipt.endpoint],['Session',data.receipt.requestId||'Not returned'],['Audio duration',data.receipt.durationMs==null?'Not returned':(data.receipt.durationMs/1000).toFixed(1)+'s']].map(([k,v])=>`<dt>${escape(k)}</dt><dd>${escape(v)}</dd>`).join('');
   $('speech-structured').textContent=typeof data.structured==='string'?data.structured:'Structured rewrite unavailable.';
-  if(data.brief)showBrief(data.brief,'Extracted directly by AssemblyAI Dictation in the same request as your transcript. Review every field.',speech);
+  if(data.brief){
+    if(!revisionBase)resetAppliedWorld();
+    showBrief(data.brief,revisionBase?(transcriptFallback?'Dictation cleanup was unavailable. Loophole used the original transcript for the selected field in a draft. Review the wording and any spoken corrections before retesting.':'AssemblyAI Dictation returned your new wording. Loophole updated the selected field in a draft; compare the original transcript and cleaned wording before retesting.'):'Extracted directly by AssemblyAI Dictation in the same request as your transcript. Review every field.',speech);
+    if(applied)revisionForApplied=applied;
+  }
   persistDraft();
-  message(data.warning||'AssemblyAI returned your world and rubric. Review them before preparing a test.');
+  message(data.warning||(revisionBase?'Dictation returned your spoken change and a revised draft. Correct any extraction errors, then prepare and review the next analysis.':'AssemblyAI returned your world and rubric. Review them before preparing a test.'));
 }
-async function sendRecording(audio,label){
-  busy=true;controls();$('record-status').textContent='AssemblyAI is transcribing and extracting the world, rules and rubric…';message('');
-  try{if(!audio||audio.byteLength<8000)throw new Error('The recording is too short. Speak a description or use the sample.');showSpeech(await api('/api/world/transcribe',audio,'audio/pcm'),label);$('record-status').textContent='Dictation complete. The original transcript and endpoint response are below.';}
+function audioBase64(audio){
+  const bytes=new Uint8Array(audio);let binary='';
+  for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384));
+  return btoa(binary);
+}
+async function sendRecording(audio,label,revisionBase=null,edit=null){
+  busy=true;controls();$('record-status').textContent=revisionBase?'AssemblyAI is transcribing and extracting your requested edit…':'AssemblyAI is transcribing and extracting the world, rules and rubric…';message('');
+  try{if(!audio||audio.byteLength<8000)throw new Error('The recording is too short. Speak a description or use the sample.');const data=revisionBase?await api('/api/world/revise',{audio:audioBase64(audio),brief:revisionBase,edit}):await api('/api/world/transcribe',audio,'audio/pcm');showSpeech(data,label,revisionBase);$('record-status').textContent='Dictation complete. The original transcript and endpoint response are below.';}
   catch(e){message(e.message);$('record-status').textContent='The request did not finish. Your applied world is unchanged.';}
   finally{busy=false;$('record-label').textContent='Dictate world & rubric';controls();}
 }
-async function finishRecording(){if(!capture)return;const recorded=capture;capture=null;busy=true;controls();try{await sendRecording(await recorded.stop(),'Microphone recording');}catch(e){message(e.message);}finally{busy=false;$('record-label').textContent='Dictate world & rubric';controls();}}
-async function beginRecording(){
+async function finishRecording(){if(!capture)return;const recorded=capture;capture=null;busy=true;controls();try{await sendRecording(await recorded.stop(),recordingBase?'Spoken revision':'Microphone recording',recordingBase,recordingEdit);}catch(e){message(e.message);}finally{busy=false;$('record-label').textContent='Dictate world & rubric';controls();}}
+async function beginRecording({revision=false}={}){
   if(capture){await finishRecording();return;}if(locked())return;
   if(!navigator.mediaDevices?.getUserMedia){message('Microphone input needs HTTPS or localhost. You can type a description or transcribe the sample.');return;}
+  try{recordingBase=revision&&applied?readBrief():null;recordingEdit=recordingBase?readRevisionTarget():null;}catch(error){message(error.message);return;}
   starting=true;controls();message('');
-  try{capture=await startCapture((_,seconds)=>$('record-status').textContent=`Recording · ${Math.floor(seconds)}s / 55s. Describe your world, rules and rubric.`,finishRecording);$('record-label').textContent='Finish recording';}
+  try{capture=await startCapture((_,seconds)=>$('record-status').textContent=`Recording · ${Math.floor(seconds)}s / 55s. ${recordingBase?'Dictate the new wording for your selected field.':'Describe your world, rules and rubric.'}`,finishRecording);$('record-label').textContent='Finish recording';}
   catch(e){message(e.name==='NotAllowedError'?'Microphone access was declined. Enable it in your browser, type your world or use the sample.':e.message);}
   finally{starting=false;controls();}
 }
 $('record').addEventListener('click',beginRecording);
 $('revise-by-voice').addEventListener('click',async()=>{
-  if(locked()||!applied)return;focusPanel('input-title');await beginRecording();
-  if(capture)message('Recording a new version: speak the full world, revised rules and rubric. The current applied world stays available until you review and apply the replacement.');
+  if(locked()||!applied)return;focusPanel('input-title');await beginRecording({revision:true});
+  if(capture)message('Dictate only the new wording for your selected field. Dictation returns a transcript and cleaned wording for review. Your applied world stays unchanged.');
 });
 $('sample').addEventListener('click',async()=>{if(locked())return;busy=true;controls();try{const response=await fetch('/world-sample.pcm');if(!response.ok)throw new Error('The sample could not be loaded. Use your microphone or type a world.');await sendRecording(await response.arrayBuffer(),'Synthetic sample recording');}catch(e){message(e.message);}finally{busy=false;controls();}});
+$('revision-sample').addEventListener('click',async()=>{
+  if(locked()||!applied)return;let base;
+  try{base=readBrief();}catch(error){message(error.message);return;}
+  busy=true;controls();
+  try{const response=await fetch('/world-revision-sample.pcm');if(!response.ok)throw new Error('The revision sample could not be loaded. Dictate your own change.');$('revision-field').value='rules';$('revision-operation').value='replace';renderRevisionTargets();$('revision-item').value='1';await sendRecording(await response.arrayBuffer(),'Synthetic spoken revision',base,{field:'rules',operation:'replace',item_number:1});}
+  catch(error){message(error.message);}finally{busy=false;controls();}
+});
 $('description').addEventListener('input',()=>{persistDraft();controls();});
 for(const [id,value] of [['airlock-example',exampleAirlock],['festival-example',exampleFestival]])$(id).addEventListener('click',()=>{if(locked())return;$('description').value=value;persistDraft();message('Example text loaded. Extract world from text makes a real AssemblyAI LLM Gateway request.');controls();});
 $('extract').addEventListener('click',async()=>{
   if(locked())return;busy=true;controls();message('AssemblyAI is extracting your world and rubric…');
-  try{const data=await api('/api/world/interpret',{text:$('description').value});showBrief(data.brief,`Extracted from typed text by ${receiptText(data.receipt)}. This was not a speech request.`);speech=null;$('speech-receipt').hidden=true;message('Review the extracted world and your rubric.');}
+  try{const data=await api('/api/world/interpret',{text:$('description').value});const nextBrief=validateBrief(data.brief);resetAppliedWorld();showBrief(nextBrief,`Extracted from typed text by ${receiptText(data.receipt)}. This was not a speech request.`);speech=null;$('speech-receipt').hidden=true;message('Review the extracted world and your rubric.');}
   catch(e){message(e.message);}finally{busy=false;controls();}
 });
 for(const k of ['world','actors','resources','rules','rubric'])$('brief-'+k).addEventListener('input',draftChanged);
@@ -82,7 +128,7 @@ function modelDetails(model,brief){
   return `<h3>Model assumptions</h3><ul>${model.assumptions.map(s=>`<li>${escape(s)}</li>`).join('')}</ul><h3>State and bounds</h3>${model.variables.map(v=>`<div class="model-row"><strong>${escape(v.label)}</strong><span>Starts at ${escape(String(v.initial))} · values: ${escape(v.values.join(', '))}</span></div>`).join('')}<h3>Permitted actions</h3>${model.actions.map(a=>`<div class="model-row"><strong>${escape(a.label)}</strong><span>When: ${escape(describePredicate(a.when,model))}</span><span>${a.effects.map(e=>escape(model.variables.find(v=>v.id===e.variable).label)+': '+(Object.hasOwn(e,'set')?escape(String(e.set)):(e.add>0?'+':'')+e.add)).join(' · ')}</span><span>From ${a.ruleIndexes.map(i=>'rule '+(i+1)).join(', ')}</span></div>`).join('')}<h3>Your rubric mapped to checks</h3>${model.criteria.map(c=>`<div class="model-row"><strong>${escape(brief.rubric[c.rubricIndex])}</strong><span>${escape(describePredicate(c.holds,model))}</span></div>`).join('')}<p class="quiet-note">The search checks at most 6,000 states and 24 moves. Limits reached produce an inconclusive result, never a pass. Actions beyond a variable's declared values are outside this model.</p>`;
 }
 async function prepareAnalysis(reviewOnly=false){
-  if(locked())return;let brief;try{brief=readBrief();}catch(e){analysisMessage(e.message);return;}
+  if(locked())return;if(applied&&revisionForApplied!==applied){analysisMessage('Dictate your revision first. You can correct its extracted draft before preparing a new test.');focusPanel('revise-by-voice');return;}let brief;try{brief=readBrief();}catch(e){analysisMessage(e.message);return;}
   proposal=null;$('proposal-panel').hidden=true;message('');busy=true;controls();analysisMessage(reviewOnly?'AssemblyAI is critiquing each requirement in your rubric…':'AssemblyAI is preparing a model or critique for your reviewed brief…');
   try{
     const data=await api('/api/world/analyze',{brief,reviewOnly});const analysis=validateAnalysis(data.analysis,brief);proposal={brief,analysis,receipt:data.receipt,speech:briefSpeech?structuredClone(briefSpeech):null,briefEdited};
@@ -117,7 +163,7 @@ function activate(bundle,{shared=false,restored=false}={}){
   const brief=validateBrief(bundle.brief,{complete:true}),analysis=validateAnalysis(bundle.analysis,brief);
   comparisonPrevious=applied?structuredClone(applied):null;
   previous=applied?.analysis.mode==='simulation'?{analysis:applied.analysis,brief:applied.brief,trace:structuredClone(lastCounterexample)}:null;
-  applied={version:1,brief,analysis,receipt:bundle.receipt||null,speech:bundle.speech||null,briefEdited:!!bundle.briefEdited,source:shared?'Shared world':restored?'Saved world':bundle.source||'Reviewed analysis'};briefEdited=false;proposal=null;lastCounterexample=[];
+  applied={version:1,brief,analysis,receipt:bundle.receipt||null,speech:bundle.speech||null,briefEdited:!!bundle.briefEdited,source:shared?'Shared world':restored?'Saved world':bundle.source||'Reviewed analysis'};briefEdited=false;revisionForApplied=null;proposal=null;lastCounterexample=[];
   $('empty-world').hidden=true;$('proposal-panel').hidden=true;$('applied-panel').hidden=false;$('applied-title').textContent=brief.world;$('applied-mode').textContent=analysis.mode==='simulation'?'Reviewed simulation':'AI critique · hypotheses';
   $('applied-note').textContent=shared?'Shared world. No new AssemblyAI request was made to open it.':'Applied from your reviewed brief. Edits above remain drafts until you apply another analysis.';
   $('world-name').value=brief.world.slice(0,120);$('save-message').textContent='';
@@ -291,7 +337,7 @@ $('undo-remove').addEventListener('click',()=>{
   if(commitWorkspace(latest=>addSavedWorld(latest,removedWorld.bundle,{id:removedWorld.id,title:removedWorld.title,now:removedWorld.updatedAt}))){workspaceMessage(`Restored “${removedWorld.title}”.`);removedWorld=null;$('undo-remove').hidden=true;}
 });
 
-window.addEventListener('hashchange',loadSharedWorld);initializeWorkspace();loadSharedWorld();
+window.addEventListener('hashchange',loadSharedWorld);initializeWorkspace();renderRevisionTargets();loadSharedWorld();
 window.addEventListener('storage',event=>{
   if(event.key!==null&&event.key!=='loophole.workspace.v1')return;
   try{workspace=readWorkspace(window.localStorage);workspaceReady=true;rememberDraft=!!workspace.draft;$('remember-draft').checked=rememberDraft;renderWorkspace();controls();}

@@ -1,4 +1,4 @@
-import {interpretWorld,transcribeWorld,analyzeWorld,validateReviewOnly} from './world-services.mjs';
+import {interpretWorld,transcribeWorld,analyzeWorld,validateReviewOnly,validateWorldRevision,reviseWorld} from './world-services.mjs';
 import {validateBrief} from './public/world-model.js';
 import {DurableObject} from 'cloudflare:workers';
 import {compileExample,validateDomain} from './public/compiler.js';
@@ -33,7 +33,7 @@ export class VoiceBudget extends DurableObject {
         await tx.put('budget',{day,count:count+1});return true;
       });
       if(!allowed)return {status:429,error:'The demo’s daily voice limit has been reached. Built-in experiments still work.'};
-      return {status:200,data:kind==='world-interpret'?await interpretWorld(payload,this.env):kind==='world-analyze'?await analyzeWorld(payload.brief,this.env,payload.reviewOnly):kind==='world-transcribe'?await transcribeWorld(payload,this.env):kind==='compile'?await gateway(payload.text,this.env,payload.domain):await transcribe(payload,this.env)};
+      return {status:200,data:kind==='world-interpret'?await interpretWorld(payload,this.env):kind==='world-analyze'?await analyzeWorld(payload.brief,this.env,payload.reviewOnly):kind==='world-transcribe'?await transcribeWorld(payload,this.env):kind==='world-revise'?await reviseWorld(payload.pcm,payload.brief,this.env,payload.edit):kind==='compile'?await gateway(payload.text,this.env,payload.domain):await transcribe(payload,this.env)};
     }catch(e){return {status:e.status||422,error:e.name==='TimeoutError'?'The provider took too long. Retry; your rule is unchanged.':e.message};}
     finally{this.active--;}
   }
@@ -52,7 +52,12 @@ export default {
       const origin=request.headers.get('Origin');
       if((origin&&origin!==url.origin)||request.headers.get('X-Loophole-Client')!=='web')return json(403,{error:'This request must come from the Loophole page.'});
       let kind,payload;
-      if(['/api/world/interpret','/api/world/analyze'].includes(url.pathname)){
+      if(url.pathname==='/api/world/revise'){
+        if(request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase()!=='application/json')return json(415,{error:'Expected JSON containing the recording and reviewed world.'});
+        const data=JSON.parse(new TextDecoder().decode(await readBody(request,2600000)));
+        try{payload=validateWorldRevision(data);}catch(error){return json(400,{error:error.message});}
+        kind='world-revise';
+      }else if(['/api/world/interpret','/api/world/analyze'].includes(url.pathname)){
         const data=JSON.parse(new TextDecoder().decode(await readBody(request,24000)));
         if(url.pathname.endsWith('/interpret')){
           if(!data||typeof data.text!=='string'||!data.text.trim()||data.text.length>6000)return json(400,{error:'Describe your world in 1–6,000 characters.'});

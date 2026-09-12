@@ -19,12 +19,12 @@ function creator({storage=browserStorage(),hash='',captureFactory,requestHandler
  function querySelectorAll(selector){
   if(selector==='#trace button')return element('trace').querySelectorAll('button');
   if(selector.startsWith('[data-'))return [...nodes.values()].flatMap(n=>n.querySelectorAll(selector));
-  if(selector.startsWith('.creator-bench '))return [...nodes.values()].filter(n=>['button','textarea','input'].includes(n.tag));
+  if(selector.startsWith('.creator-bench '))return [...nodes.values()].filter(n=>['button','textarea','input','select'].includes(n.tag));
   return [];
  }
  class TestURL extends URL{static createObjectURL(blob){exported=blob;return 'blob:test';}static revokeObjectURL(){}}
  const location={hash,origin:'http://localhost',pathname:'/create'},events={};
- const context=vm.createContext({...model,...sharing,...workspaceTools,...comparisonTools,startCapture:captureFactory,worldSearch:(...args)=>{searchCalls++;return model.worldSearch(...args);},URL:TestURL,URLSearchParams,Blob,structuredClone,location,history:{replaceState(_state,_title,path){const target=new URL(path,location.origin);location.hash=target.hash;location.pathname=target.pathname;}},navigator:{mediaDevices:captureFactory?{getUserMedia:async()=>({})}:undefined,clipboard:{async writeText(s){shared=s;}}},document:{getElementById:element,querySelectorAll,createElement:()=>({click(){}})},window:{localStorage:storage,addEventListener(k,fn){events[k]=fn;}},fetch:async(route,options)=>{apiCalls++;requests.push({route,options});if(requestHandler)return requestHandler(route,options);throw new Error('Unexpected provider call during local workflow');},AbortSignal,setTimeout(){}});
+ const context=vm.createContext({...model,...sharing,...workspaceTools,...comparisonTools,startCapture:captureFactory,worldSearch:(...args)=>{searchCalls++;return model.worldSearch(...args);},URL:TestURL,URLSearchParams,Blob,structuredClone,btoa,location,history:{replaceState(_state,_title,path){const target=new URL(path,location.origin);location.hash=target.hash;location.pathname=target.pathname;}},navigator:{mediaDevices:captureFactory?{getUserMedia:async()=>({})}:undefined,clipboard:{async writeText(s){shared=s;}}},document:{getElementById:element,querySelectorAll,createElement:()=>({click(){}})},window:{localStorage:storage,addEventListener(k,fn){events[k]=fn;}},fetch:async(route,options)=>{apiCalls++;requests.push({route,options});if(requestHandler)return requestHandler(route,options);throw new Error('Unexpected provider call during local workflow');},AbortSignal,setTimeout(){}});
  vm.runInContext(readFileSync(new URL('../public/create.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,''),context);
  const run=code=>vm.runInContext(code,context);context.bundle={brief:structuredClone(brief),analysis:structuredClone(analysis)};
  return {element,run,storage,requests,exported:()=>exported,shared:()=>shared,apiCalls:()=>apiCalls,searchCalls:()=>searchCalls,readWorkspace:()=>workspaceTools.readWorkspace(storage),dispatchStorage:key=>events.storage?.({key}),importText:async text=>{element('world-file').files=[{size:Buffer.byteLength(text),text:async()=>text}];await element('world-file').handlers.change();}};
@@ -228,12 +228,39 @@ test('dictating a new version uses the shared capture and Dictation flow while p
  assert.equal(captureCalls,1);assert.equal(finishCallback,a.run('finishRecording'));assert.equal(a.run('starting'),true);assert.equal(a.element('record').disabled,true);
  resolveCapture({stop:async()=>{stopCalls++;return audio;}});await recording;
  assert.equal(a.element('record-label').textContent,'Finish recording');assert.equal(a.element('record').disabled,false);
- for(const id of ['revise-by-voice','sample','extract','description','brief-world','brief-rules','analyze','review-only','apply','save-world','remember-draft','import-world','share','export'])assert.equal(a.element(id).disabled,true,`${id} must be disabled during capture`);
+ for(const id of ['revise-by-voice','revision-field','revision-operation','revision-item','sample','extract','description','brief-world','brief-rules','analyze','review-only','apply','save-world','remember-draft','import-world','share','export'])assert.equal(a.element(id).disabled,true,`${id} must be disabled during capture`);
  assert.equal(a.run('JSON.stringify(applied)'),applied);assert.equal(a.run('JSON.stringify(result)'),verdict);assert.equal(a.run('proposal.brief.world'),'Pending model');
  assert.equal(a.apiCalls(),0);
  await a.element('record').click();
- assert.equal(stopCalls,1);assert.equal(a.apiCalls(),1);assert.equal(a.requests[0].route,'/api/world/transcribe');assert.equal(a.requests[0].options.headers['Content-Type'],'audio/pcm');assert.equal(a.requests[0].options.body,audio);
+ assert.equal(stopCalls,1);assert.equal(a.apiCalls(),1);assert.equal(a.requests[0].route,'/api/world/revise');assert.equal(a.requests[0].options.headers['Content-Type'],'application/json');const sent=JSON.parse(a.requests[0].options.body);assert.deepEqual(sent.brief,brief);assert.deepEqual(sent.edit,{field:'rules',operation:'replace',item_number:1});assert.equal(sent.audio,Buffer.from(audio).toString('base64'));
  assert.equal(a.run('capture'),null);assert.equal(a.element('brief-world').value,newBrief.world);assert.equal(a.element('speech-original').textContent,'My revised counting game.');
  assert.equal(a.run('JSON.stringify(applied)'),applied);assert.equal(a.run('JSON.stringify(result)'),verdict);assert.equal(a.run('proposal'),null);assert.equal(a.element('apply').disabled,true);
  assert.equal(a.element('revise-by-voice').disabled,false);assert.equal(a.element('record').disabled,false);assert.equal(a.element('description').disabled,false);
+});
+
+
+test('retesting an applied world requires a new Dictation draft, while extraction corrections remain editable',async()=>{
+ const a=creator();a.run("showBrief(bundle.brief,'Original');activate(bundle)");
+ a.element('brief-rules').value='A typed revision';a.element('brief-rules').handlers.input();
+ assert.equal(a.element('analyze').disabled,true);assert.equal(a.element('review-only').disabled,true);assert.equal(a.element('revision-required').hidden,false);
+ await a.run('prepareAnalysis()');assert.equal(a.apiCalls(),0);assert.match(a.element('analysis-message').textContent,/Dictate your revision first/);
+ a.run("showSpeech({text:'Replace rule one with a spoken revision.',brief:{...bundle.brief,rules:['A spoken revision']},receipt:{elapsedMs:500,endpoint:'https://dictation.assemblyai.com/transcribe'}},'Spoken revision',bundle.brief);controls()");
+ assert.equal(a.element('analyze').disabled,false);assert.equal(a.element('revision-required').hidden,true);
+ a.element('brief-rules').value='A corrected spoken revision';a.element('brief-rules').handlers.input();assert.equal(a.element('analyze').disabled,false);
+ assert.equal(a.run('applied.brief.rules[0]'),brief.rules[0]);
+ a.run('activate(bundle);controls()');assert.equal(a.element('analyze').disabled,true);
+});
+
+test('a revision transcript without a valid structured draft cannot unlock a new analysis',async()=>{
+ const a=creator();a.run("showBrief(bundle.brief,'Original');activate(bundle);showSpeech({text:'An ambiguous edit',brief:null,warning:'Specify a rule number',receipt:{elapsedMs:500,endpoint:'https://dictation.assemblyai.com/transcribe'}},'Spoken revision',bundle.brief);controls()");
+ assert.equal(a.element('analyze').disabled,true);assert.equal(a.element('speech-original').textContent,'An ambiguous edit');
+ await a.run('prepareAnalysis()');assert.equal(a.apiCalls(),0);assert.equal(a.run('applied.brief.rules[0]'),brief.rules[0]);
+});
+
+
+test('deliberately extracting a new typed world leaves the revision gate behind',async()=>{
+ const a=creator({requestHandler:async()=>({ok:true,json:async()=>({brief:{...brief,world:'A completely new world'},receipt:{provider:'AssemblyAI LLM Gateway',elapsedMs:10}})})});
+ a.run("showBrief(bundle.brief,'Original');activate(bundle)");a.element('description').value='An entirely new world';a.element('description').handlers.input();
+ assert.equal(a.element('analyze').disabled,true);await a.element('extract').click();
+ assert.equal(a.element('brief-world').value,'A completely new world');assert.equal(a.run('applied'),null);assert.equal(a.element('applied-panel').hidden,true);assert.equal(a.element('share').disabled,true);assert.equal(a.element('analyze').disabled,false);
 });

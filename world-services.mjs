@@ -46,6 +46,74 @@ export async function transcribeWorld(pcm,env=process.env){
   catch{warning='Your transcript is ready, but the structured draft was unavailable. Review the words and choose Extract world from text to retry.';}
   return {text:data.text,structured:data.llm_response??null,brief,warning,receipt};
 }
+
+const revisionInstruction=`Clean the dictated wording for one selected world-description, rule or rubric field. Return only that plain-text field value. Remove filler sounds and false starts; honor final explicit self-corrections. Preserve every condition, quantity, negation, exception and timing word. Preserve the speaker's distinction between what is allowed and what is desired. Do not add restrictions, infer missing facts, summarize away details, or invent content. Do not add JSON, headings, explanations or surrounding quotation marks.`;
+
+function revisionPcm(pcm){
+  if(!(pcm instanceof Uint8Array)||pcm.byteLength<8000||pcm.byteLength>1920000||pcm.byteLength%2!==0)throw fail('Revision audio must contain 8,000–1,920,000 bytes of mono 16 kHz, 16-bit PCM (a quarter second to 60 seconds), with complete samples.',400);
+  return pcm;
+}
+function revisionBrief(input){try{return validateBrief(input,{complete:true});}catch(error){throw fail(`The revision baseline is invalid: ${error.message}`,400);}}
+function revisionEdit(input,baseline){
+  if(!input||typeof input!=='object'||Array.isArray(input)||!['world','rules','rubric'].includes(input.field)||!['replace','append'].includes(input.operation))throw fail('Choose a world description, current rule or rubric requirement to revise.',400);
+  const isWorld=input.field==='world',numbered=!isWorld&&input.operation==='replace';
+  const keys=['field','operation',...(numbered?['item_number']:[])];
+  if(isWorld&&input.operation!=='replace'||Object.keys(input).length!==keys.length||keys.some(key=>!Object.hasOwn(input,key)))throw fail('Choose one valid revision target; only existing list replacements use an item number.',400);
+  if(numbered&&(!Number.isInteger(input.item_number)||input.item_number<1||input.item_number>baseline[input.field].length))throw fail('The selected revision item does not exist in the current draft. Choose it again.',400);
+  if(input.operation==='append'&&baseline[input.field].length>=12)throw fail('This list already contains 12 items. Replace an existing item instead.',400);
+  return {field:input.field,operation:input.operation,...(numbered?{item_number:input.item_number}:{})};
+}
+
+export function validateWorldRevision(input){
+  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!['audio','brief','edit'].includes(key)))throw fail('A revision request must contain base64 audio, the current brief and a selected edit target.',400);
+  const brief=revisionBrief(input.brief),edit=revisionEdit(input.edit,brief),{audio}=input;
+  if(typeof audio!=='string'||!audio.length||audio.length>2560000||audio.length%4!==0||!/^[A-Za-z0-9+/]*={0,2}$/.test(audio))throw fail('Revision audio must use valid standard base64 encoding and contain at most 60 seconds of PCM.',400);
+  let decoded;
+  try{decoded=atob(audio);if(btoa(decoded)!==audio)throw new Error();}catch{throw fail('Revision audio must use valid standard base64 encoding.',400);}
+  const pcm=revisionPcm(Uint8Array.from(decoded,character=>character.charCodeAt(0)));
+  return {pcm,brief,edit};
+}
+
+function applyRevisionValue(value,baseline,edit){
+  if(typeof value!=='string')throw new Error('No revision text was returned.');
+  const next={...baseline};
+  if(edit.field==='world')next.world=value;
+  else{
+    // List fields render one item per textarea line. A generated line break
+    // must not create another item or change later item numbers.
+    const clean=value.replace(/[\r\n\v\f\u0085\u2028\u2029]+/g,' ').trim();
+    next[edit.field]=[...baseline[edit.field]];
+    if(edit.operation==='append')next[edit.field].push(clean);
+    else next[edit.field][edit.item_number-1]=clean;
+  }
+  return validateBrief(next,{complete:true});
+}
+
+export async function reviseWorld(pcm,input,env=process.env,selectedEdit){
+  revisionPcm(pcm);
+  const baseline=revisionBrief(input),edit=revisionEdit(selectedEdit,baseline);
+  // Dictation documents a 2,048-character llm_instruction limit. The selected
+  // target is applied locally; no baseline content is sent to the provider.
+  if(revisionInstruction.length>2048)throw fail('The voice revision instruction exceeds the Dictation limit.',500);
+  if(!env.ASSEMBLYAI_API_KEY)throw fail('AssemblyAI is not configured on this server.',503);
+  const form=new FormData();form.append('audio',new Blob([pcm],{type:'audio/pcm'}),'revision.pcm');form.append('config',new Blob([JSON.stringify({sample_rate:16000,channels:1,llm_instruction:revisionInstruction})],{type:'application/json'}));
+  const start=Date.now(),response=await fetch('https://dictation.assemblyai.com/transcribe',{method:'POST',headers:{Authorization:env.ASSEMBLYAI_API_KEY},body:form,signal:AbortSignal.timeout(90000)});
+  if(!response.ok)throw fail(`AssemblyAI could not transcribe the revision (HTTP ${response.status}). Your current world is unchanged. Retry the recording.`,response.status===429?429:502);
+  const data=await response.json();
+  if(typeof data.text!=='string'||!data.text.trim())throw fail('No revision speech was recognized. Your current world is unchanged. Try another recording.',422);
+  const receipt={provider:'AssemblyAI Dictation',endpoint:'https://dictation.assemblyai.com/transcribe',purpose:'revision',inputPurpose:'revision',elapsedMs:Date.now()-start,durationMs:data.audio_duration_ms??null,requestId:data.session_id||null};
+  let brief=null,warning='',candidateSource=null,candidate;
+  if(data.llm_error!=null||data.llm_response==null){
+    candidate=data.text;candidateSource='original-transcript';
+    warning='Dictation cleanup was unavailable. The original transcript is the proposed field text; review it carefully, including any spoken corrections, before retesting.';
+  }else if(typeof data.llm_response==='string'){
+    candidate=data.llm_response;candidateSource='dictation-rewrite';
+  }
+  try{brief=applyRevisionValue(candidate,baseline,edit);}
+  catch{warning='No changes were prepared because the proposed field text was empty or invalid. Your current world, transcript and editable draft are preserved. Check the selected target and record again.';}
+  return {text:data.text,structured:data.llm_response??null,brief,warning,receipt,revision:true,inputPurpose:'revision',edit,candidateSource};
+}
+
 export function validateReviewOnly(value){
   if(value!==undefined&&typeof value!=='boolean')throw fail('reviewOnly must be a boolean.',400);
   return value===true;

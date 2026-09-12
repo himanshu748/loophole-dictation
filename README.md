@@ -54,6 +54,14 @@ Keep recordings, narration, publication drafts, feedback evidence and submission
 
 ## Revise and compare
 
-Save an applied world with a name, revise its draft rules or rubric, and review a new analysis. Applying that analysis shows fresh before-and-after results and the exact rule/rubric text changes. You can also compare a saved version with your current applied world. Changed rubrics, model assumptions, domains and criteria are called out; a changed result alone does not prove a real-world fix. Compatible previous action sequences can still be replayed.
+Save an applied world with a name, choose the field in **Dictate a revision**, and speak its new wording. After a world is applied, preparing another test or critique requires a Dictation revision. You can correct extracted wording before requesting the new analysis. Applying that analysis shows fresh before-and-after results and the exact rule/rubric text changes. You can also compare a saved version with your current applied world. Changed rubrics, model assumptions, domains and criteria are called out; a changed result alone does not prove a real-world fix. Compatible previous action sequences can still be replayed.
 
-The simulation shows each rubric requirement at the displayed step, alongside the model state. For AI critique, **Add suggestion to draft rules** copies a proposed revision into the editable draft. It never silently updates the applied analysis; prepare and review a new analysis first.
+The simulation shows each rubric requirement at the displayed step, alongside the model state. For AI critique, **Add suggestion to draft rules** copies a proposed revision into the editable draft. It never silently updates the applied analysis. Dictate the revision, correct the result if needed, and review a new analysis first.
+
+### Spoken revisions
+
+Choose a rule, rubric item or the world description, then dictate its new wording. `POST /api/world/revise` accepts the current validated draft, selected target and base64 mono 16 kHz PCM audio. One AssemblyAI Dictation request returns the original transcript and cleaned wording. Loophole updates a copy of the selected field; all other items remain unchanged. The full baseline is not sent to the provider.
+
+Users can replace a selected item or add a rule/rubric item. Targets are validated before provider usage and the complete draft is validated after insertion. If cleanup is unavailable, the original transcript can be used with an explicit warning; intentional empty cleanup never restores fillers. Review the result before preparing the next analysis.
+
+The tool-library world includes a synthetic spoken revision sample for rule one: borrowing limits for ladders, drills and the three-tool cap. Both sample recordings are intentionally public and call the real Dictation endpoint.
